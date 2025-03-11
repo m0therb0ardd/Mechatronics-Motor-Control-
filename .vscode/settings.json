@@ -1,5 +1,7 @@
 {
     "files.associations": {
-        "encoder.h": "c"
+        "encoder.h": "c",
+        "set": "c",
+        "format": "c"
     }
 }

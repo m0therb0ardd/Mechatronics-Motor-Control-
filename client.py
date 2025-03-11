@@ -8,7 +8,9 @@ has_quit = False
 while not has_quit:
     print('PIC32 MOTOR DRIVER INTERFACE')
     # display the menu options; this list will grow
-    print('\tc: Read encoder(counts) \te: Reset Encoder \td: Read encoder(deg)  \ta: Read current sensor(ADC counts) \tb:  Read current sensor(mA)  \tr: Get mode \tq: Quit')  # '\t' is a tab    # read the user's choice
+    print('\tc: Read encoder(counts) \tf: Set PWM \tp: Unpower motor  \te: Reset Encoder \td: Read encoder(deg)  \ta: Read current sensor(ADC counts) \tb:  Read current sensor(mA)  \tr: Get mode \tq: Quit')  # '\t' is a tab    # read the user's choice
+
+
     selection = input('\nENTER COMMAND: ')
     selection_endline = selection+'\n'
     # send the command to the PIC32
@@ -56,6 +58,16 @@ while not has_quit:
         print('Exiting client')
         has_quit = True  # Exit client
         ser.close()  # Close the serial port
+        
+    elif selection == 'f':  # Set PWM
+        pwm_value = input('Enter PWM value (-100 to 100): ')  # Ask for PWM value
+        ser.write(pwm_value.encode() + b'\n')  # Send the PWM value to the PIC32
+        response = ser.read_until(b'\n').decode().strip()  # Read the response
+        print(f'{response}\n')  # Print the confirmation message
+
+    elif selection == 'p':  # Unpower motor
+        response = ser.read_until(b'\n').decode().strip()  # Read the response
+        print(f'{response}\n')  # Print the confirmation message
 
 
     else:
