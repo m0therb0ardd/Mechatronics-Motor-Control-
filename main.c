@@ -27,48 +27,6 @@ void pwm_init(void); // Initializes the PWM module for a 20 kHz signal.
 // Global variables
 volatile int pwm_duty = 0;  // PWM duty cycle (-100 to 100)
 volatile int motor_direction = 0;  // Motor direction (0 = brake, 1 = forward, -1 = reverse)
-
-
-    // // Initialize Timer2 for 5 kHz ISR
-    // void timer2_init(void) {
-    //     T2CONbits.ON = 0;  // Turn off Timer2 before config
-    //     T2CONbits.TCKPS = 0b100;  // Set prescaler to 1:16
-    //     //PR2 = (NU32DIP_SYS_FREQ / (16 * 5000)) - 1;  // Set period for 5 kHz
-    //     PR2 = 9600 - 1; // 5kHz ISR
-    //     TMR2 = 0;  // Clear Timer2 counter
-    //     IFS0bits.T2IF = 0;  // Clear Timer2 interrupt flag
-    //     IEC0bits.T2IE = 1;  // Enable Timer2 interrupt
-    //     IPC2bits.T2IP = 5;  // Set Timer2 interrupt priority
-    //     T2CONbits.ON = 1;  // Turn on Timer2
-    // }
-
-    // //responsible for setting up OC1 (PWM output) and timer3 which is pwm timer clock 
-    // void pwm_init(void) {
-    //     // Step 1: Enable Peripheral Pin Select (PPS)
-    //     __builtin_disable_interrupts();  // Disable interrupts while configuring PPS
-    //     RPB15Rbits.RPB15R = 0b0101;      // Map OC1 to RB15 (0101 = OC1)
-    //     // CFGCONbits.IOLOCK = 1;           // Lock PPS configuration
-    //     __builtin_enable_interrupts();   // Re-enable interrupts
-
-    //     // Step 2: Configure OC1 (PWM output)
-    //     OC1CONbits.OCM = 0b110;  // PWM mode without fault pin
-    //     OC1CONbits.OCTSEL = 0;   // Use Timer3 as the clock source for OC1
-    //     OC1RS = 1200;       //see if 50 % duty cycle works  // Set initial duty cycle to 0
-    //     OC1R = 0;                // Set initial duty cycle to 0
-
-    //     // Step 3: Configure Timer3 for 20 kHz PWM
-    //     T3CONbits.ON = 0;        // Turn off Timer3
-    //     //T3CONbits.TCKPS = 0b000; // Set Timer3 prescaler to 1:1
-    //     PR3 = PWM_PERIOD;    // Set period for 20 kHz
-    //     TMR3 = 0;                // Clear Timer3 counter
-    //     T3CONbits.ON = 1;        // Turn on Timer3
-    //     OC1CONbits.ON = 1; // Make sure Output Compare is on
-
-    //     // Step 4: Configure direction pin (e.g., RB2)
-    //     TRISBbits.TRISB2 = 0;    // Set RB2 as output
-    //     LATBbits.LATB0 = 0;      // Set initial direction to brake
-    // }
-
     
 //pwm_init 1. configures timer3 for 20kHz PWM signal
 //2. maps rb15 as pwm output
@@ -126,8 +84,50 @@ void timer2_init(void) {
     __builtin_enable_interrupts();  // Re-enable interrupts
 }
 
+// void __ISR(_TIMER_2_VECTOR, IPL5SOFT) timer2_isr(void) {
+//    // NU32DIP_WriteUART1("Timer2 ISR Triggered!\r\n");  // Debugging message
+//     char buffer[100];  // Declare local buffer
+
+//     switch (get_mode()) {
+//         case IDLE:
+//             OC1RS = 0;  // Stop PWM (Brake mode)
+//             LATAbits.LATA0 = 0;  // Motor OFF
+//             break;
+
+//         case PWM:
+//             sprintf(buffer, "PWM Mode: pwm_duty = %d, OC1RS = %d, LATA0 = %d\r\n", 
+//                     pwm_duty, OC1RS, LATAbits.LATA0);
+//             NU32DIP_WriteUART1(buffer);
+//             if (pwm_duty > 0) {
+//                 OC1RS = (pwm_duty * PR3) / 100; // Convert % to OC1RS value
+//                 LATAbits.LATA0 = 0;  // Forward direction
+//             } else if (pwm_duty < 0) {
+//                 OC1RS = (-pwm_duty * PR3) / 100; // Convert % to OC1RS value //needs to be negative bc OC1RS value must be positive
+//                 LATAbits.LATA0 = 1;  // Reverse direction
+//             } else {
+//                 OC1RS = 0; // Stop motor
+//                 LATAbits.LATA0 = 0;
+//             }
+
+//             // Debug print to check OC1RS and direction pin
+//             sprintf(buffer, "AFTER: OC1RS = %d, LATAbits.LATA0 = %d\r\n", OC1RS, LATAbits.LATA0);
+//             NU32DIP_WriteUART1(buffer);
+//             break;
+
+//         default:
+//             break;
+//     }
+
+//     IFS0bits.T2IF = 0;  // Clear Timer2 interrupt flag
+// }
+
 void __ISR(_TIMER_2_VECTOR, IPL5SOFT) timer2_isr(void) {
-   // NU32DIP_WriteUART1("Timer2 ISR Triggered!\r\n");  // Debugging message
+    char buffer[100];  // Declare local buffer
+
+    sprintf(buffer, "BEFORE ISR: pwm_duty = %d, OC1RS = %d, LATA0 = %d\r\n", 
+            pwm_duty, OC1RS, LATAbits.LATA0);
+    NU32DIP_WriteUART1(buffer);
+
     switch (get_mode()) {
         case IDLE:
             OC1RS = 0;  // Stop PWM (Brake mode)
@@ -145,6 +145,10 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) timer2_isr(void) {
                 OC1RS = 0; // Stop motor
                 LATAbits.LATA0 = 0;
             }
+
+            sprintf(buffer, "AFTER ISR: pwm_duty = %d, OC1RS = %d, LATA0 = %d\r\n", 
+                    pwm_duty, OC1RS, LATAbits.LATA0);
+            NU32DIP_WriteUART1(buffer);
             break;
 
         default:
@@ -153,10 +157,6 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) timer2_isr(void) {
 
     IFS0bits.T2IF = 0;  // Clear Timer2 interrupt flag
 }
-
-
-
-
 
 
 
@@ -228,6 +228,7 @@ int main()
         sprintf(buffer, "Encoder reset\r\n");  // Format the confirmation message
         NU32DIP_WriteUART1(buffer);  // Send the confirmation to the client
         break;
+
     }
 
     case 'f':  // Set PWM duty cycle (-100 to 100)
@@ -235,20 +236,25 @@ int main()
         int n = 0;
         NU32DIP_ReadUART1(buffer, BUF_SIZE);  // Read the PWM value
         sscanf(buffer, "%d", &n);  // Parse the PWM value
+        
+        // 🔹 Debug: Print received PWM value BEFORE updating
+        sprintf(buffer, "Received PWM value: %d\r\n", n);
+        NU32DIP_WriteUART1(buffer);
+        
         if (n >= -100 && n <= 100) {
             pwm_duty = n;  // Set the PWM duty cycle
-            sprintf(buffer, "Setting mode to PWM\n");
             set_mode(PWM);  // Switch to PWM mode
-            sprintf(buffer, "Mode set to: %d\n", get_mode());
-            NU32DIP_WriteUART1(buffer);
 
-            // 🔹 NEW DEBUG PRINT - Check Timer3 status after setting PWM
-            sprintf(buffer, "Timer3 ON: %d, PR3: %d, TMR3: %d, OC1RS: %d\r\n", 
-                T3CONbits.ON, PR3, TMR3, OC1RS);
+            // 🔹 Debug: Print updated `pwm_duty`
+            sprintf(buffer, "PWM updated to: %d\r\n", pwm_duty);
             NU32DIP_WriteUART1(buffer);
+        } else {
+            NU32DIP_WriteUART1("Invalid PWM value\r\n");
         }
         break;
     }
+
+
 
     case 'p':  // Unpower the motor
     {
