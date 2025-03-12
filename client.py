@@ -8,7 +8,7 @@ has_quit = False
 while not has_quit:
     print('PIC32 MOTOR DRIVER INTERFACE')
     # display the menu options; this list will grow
-    print('\tc: Read encoder(counts) \tf: Set PWM \tp: Unpower motor  \te: Reset Encoder \td: Read encoder(deg)  \ta: Read current sensor(ADC counts) \tb:  Read current sensor(mA)  \tr: Get mode \tq: Quit')  # '\t' is a tab    # read the user's choice
+    print('\tc: Read encoder(counts) \tf: Set PWM \tp: Unpower motor  \te: Reset Encoder \td: Read encoder(deg)  \ta: Read current sensor(ADC counts) \tb:  Read current sensor(mA)  \tg: Set Current Gains \th: Get current gains \tr: Get mode \tq: Quit')  # '\t' is a tab    # read the user's choice
 
 
     selection = input('\nENTER COMMAND: ')
@@ -18,7 +18,7 @@ while not has_quit:
 
 
     if selection == 'c':  # Read encoder counts
-            ser.write(b'c\n')  # Send the 'c' command
+            #ser.write(b'c\n')  # Send the 'c' command
             counts_str = ser.read_until(b'\n').decode().strip()  # Read the response
             counts = int(counts_str)  # Convert to integer
             print(f'Encoder counts: {counts}\n')
@@ -60,10 +60,25 @@ while not has_quit:
         ser.close()  # Close the serial port
         
     elif selection == 'f':  # Set PWM
-        pwm_value = input('Enter PWM value (-100 to 100): ')  # Ask for PWM value
-        ser.write(pwm_value.encode() + b'\n')  # Send the PWM value to the PIC32
+        pwm_value = float(input('Enter PWM value (-100 to 100):'))  # Ask for PWM value
+        #ser.write(pwm_value.encode() + b'\n')  # Send the PWM value to the PIC32
+        ser.write(f"{pwm_value}\n".encode())  # Send the PWM value to the PIC32
+
+        # response = ser.read_until(b'\n').decode().strip()  # Read the response
+        # print(f'{response}\n')  # Print the confirmation message
+
+    elif selection == 'g':  # Set current gains
+        kp = float(input("Enter Kp for current control: "))
+        ki = float(input("Enter Ki for current control: ")) 
+        ser.write(f"{kp} {ki}\n".encode())  # Send command with values 
+        # response = ser.read_until(b'\n').decode().strip()  # Read confirmation
+        # print(f"Response: {response}\n")
+
+    elif selection == 'h':  # Get current gains
+        #ser.write(b"h\n")  # Send command to request current gains
         response = ser.read_until(b'\n').decode().strip()  # Read the response
-        print(f'{response}\n')  # Print the confirmation message
+        print(f"Current Gains: {response}\n")
+
 
     elif selection == 'p':  # Unpower motor
         response = ser.read_until(b'\n').decode().strip()  # Read the response

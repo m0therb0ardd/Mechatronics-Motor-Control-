@@ -27,6 +27,14 @@ void pwm_init(void); // Initializes the PWM module for a 20 kHz signal.
 // Global variables
 volatile int pwm_duty = 0;  // PWM duty cycle (-100 to 100)
 volatile int motor_direction = 0;  // Motor direction (0 = brake, 1 = forward, -1 = reverse)
+
+//SECTION 28.4.10: PI CURRENT CONTROL AND ITEST
+static volatile float Kp_mA = 0.03, Ki_mA = 0.05;  // Default current control gains --> needs to be accessible in timer2 for ISR control
+static float refCurrent[100];  // stores desired current values in ITEST mode
+static float actCurrent[100];  // stores actual current as measured by INA219 sensor
+
+
+
     
 //pwm_init 1. configures timer3 for 20kHz PWM signal
 //2. maps rb15 as pwm output
@@ -124,9 +132,9 @@ void timer2_init(void) {
 void __ISR(_TIMER_2_VECTOR, IPL5SOFT) timer2_isr(void) {
     char buffer[100];  // Declare local buffer
 
-    sprintf(buffer, "BEFORE ISR: pwm_duty = %d, OC1RS = %d, LATA0 = %d\r\n", 
-            pwm_duty, OC1RS, LATAbits.LATA0);
-    NU32DIP_WriteUART1(buffer);
+    // sprintf(buffer, "BEFORE ISR: pwm_duty = %d, OC1RS = %d, LATA0 = %d\r\n", 
+    //         pwm_duty, OC1RS, LATAbits.LATA0);
+    // NU32DIP_WriteUART1(buffer);
 
     switch (get_mode()) {
         case IDLE:
@@ -146,9 +154,9 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) timer2_isr(void) {
                 LATAbits.LATA0 = 0;
             }
 
-            sprintf(buffer, "AFTER ISR: pwm_duty = %d, OC1RS = %d, LATA0 = %d\r\n", 
-                    pwm_duty, OC1RS, LATAbits.LATA0);
-            NU32DIP_WriteUART1(buffer);
+            // sprintf(buffer, "AFTER ISR: pwm_duty = %d, OC1RS = %d, LATA0 = %d\r\n", 
+            //         pwm_duty, OC1RS, LATAbits.LATA0);
+            // NU32DIP_WriteUART1(buffer);
             break;
 
         default:
@@ -231,32 +239,66 @@ int main()
 
     }
 
+    // case 'f':  // Set PWM duty cycle (-100 to 100)
+    // {
+    //     int n = 0;
+    //     NU32DIP_ReadUART1(buffer, BUF_SIZE);  // Read the PWM value
+    //     sscanf(buffer, "%f", &n);  // Parse the PWM value
+        
+    //     // 🔹 Debug: Print received PWM value BEFORE updating
+    //     sprintf(buffer, "Received PWM value: %d\r\n", n);
+    //     NU32DIP_WriteUART1(buffer);
+        
+    //     if (n >= -100 && n <= 100) {
+    //         pwm_duty = n;  // Set the PWM duty cycle
+    //         set_mode(PWM);  // Switch to PWM mode
+
+    //         // 🔹 Debug: Print updated `pwm_duty`
+    //         // sprintf(buffer, "PWM updated to: %d\r\n", pwm_duty);
+    //         // NU32DIP_WriteUART1(buffer);
+    //     } else {
+    //         NU32DIP_WriteUART1("Invalid PWM value\r\n");
+    //     }
+    //     break;
+    // }
+
     case 'f':  // Set PWM duty cycle (-100 to 100)
     {
-        int n = 0;
+        float n = 0.0f;
         NU32DIP_ReadUART1(buffer, BUF_SIZE);  // Read the PWM value
-        sscanf(buffer, "%d", &n);  // Parse the PWM value
+        sscanf(buffer, "%f", &n);  // Parse the PWM value
         
-        // 🔹 Debug: Print received PWM value BEFORE updating
-        sprintf(buffer, "Received PWM value: %d\r\n", n);
+        // Debug: Print received PWM value BEFORE updating
+        sprintf(buffer, "Received PWM value: %.2f\r\n", n);
         NU32DIP_WriteUART1(buffer);
         
-        if (n >= -100 && n <= 100) {
-            pwm_duty = n;  // Set the PWM duty cycle
+        if (n >= -100.0f && n <= 100.0f) {
+            pwm_duty = (int)n;  // Set the PWM duty cycle (cast to int if needed)
             set_mode(PWM);  // Switch to PWM mode
-
-            // 🔹 Debug: Print updated `pwm_duty`
-            sprintf(buffer, "PWM updated to: %d\r\n", pwm_duty);
-            NU32DIP_WriteUART1(buffer);
         } else {
             NU32DIP_WriteUART1("Invalid PWM value\r\n");
         }
         break;
     }
 
+    case 'g':  // Set current gains (Kp_mA, Ki_mA)
+    {
+        NU32DIP_ReadUART1(buffer, BUF_SIZE);  // Read user input
+        sscanf(buffer, "%f %f", &Kp_mA, &Ki_mA);  // Parse values
+        // sprintf(buffer, "Current Gains Set: Kp_mA = %.2f, Ki_mA = %.2f\r\n", Kp_mA, Ki_mA);
+        // NU32DIP_WriteUART1(buffer);
+        break;
+    }
 
 
-    case 'p':  // Unpower the motor
+    case 'h':
+{
+    sprintf(buffer, "Kp: %f, Ki: %f\r\n", Kp_mA, Ki_mA);
+    NU32DIP_WriteUART1(buffer);
+    break;
+}
+
+   case 'p':  // Unpower the motor
     {
         set_mode(IDLE);  // Switch to IDLE mode
         break;
