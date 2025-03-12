@@ -92,49 +92,15 @@ void timer2_init(void) {
     __builtin_enable_interrupts();  // Re-enable interrupts
 }
 
-// void __ISR(_TIMER_2_VECTOR, IPL5SOFT) timer2_isr(void) {
-//    // NU32DIP_WriteUART1("Timer2 ISR Triggered!\r\n");  // Debugging message
-//     char buffer[100];  // Declare local buffer
-
-//     switch (get_mode()) {
-//         case IDLE:
-//             OC1RS = 0;  // Stop PWM (Brake mode)
-//             LATAbits.LATA0 = 0;  // Motor OFF
-//             break;
-
-//         case PWM:
-//             sprintf(buffer, "PWM Mode: pwm_duty = %d, OC1RS = %d, LATA0 = %d\r\n", 
-//                     pwm_duty, OC1RS, LATAbits.LATA0);
-//             NU32DIP_WriteUART1(buffer);
-//             if (pwm_duty > 0) {
-//                 OC1RS = (pwm_duty * PR3) / 100; // Convert % to OC1RS value
-//                 LATAbits.LATA0 = 0;  // Forward direction
-//             } else if (pwm_duty < 0) {
-//                 OC1RS = (-pwm_duty * PR3) / 100; // Convert % to OC1RS value //needs to be negative bc OC1RS value must be positive
-//                 LATAbits.LATA0 = 1;  // Reverse direction
-//             } else {
-//                 OC1RS = 0; // Stop motor
-//                 LATAbits.LATA0 = 0;
-//             }
-
-//             // Debug print to check OC1RS and direction pin
-//             sprintf(buffer, "AFTER: OC1RS = %d, LATAbits.LATA0 = %d\r\n", OC1RS, LATAbits.LATA0);
-//             NU32DIP_WriteUART1(buffer);
-//             break;
-
-//         default:
-//             break;
-//     }
-
-//     IFS0bits.T2IF = 0;  // Clear Timer2 interrupt flag
-// }
-
 void __ISR(_TIMER_2_VECTOR, IPL5SOFT) timer2_isr(void) {
     char buffer[100];  // Declare local buffer
 
-    // sprintf(buffer, "BEFORE ISR: pwm_duty = %d, OC1RS = %d, LATA0 = %d\r\n", 
-    //         pwm_duty, OC1RS, LATAbits.LATA0);
-    // NU32DIP_WriteUART1(buffer);
+    //adding ITEST LOGIC
+    static int count = 0; //counter for 100 samples
+    static float integral_term = 0.0;  // Integral term for PI control
+    static float ref_current = 200.0;  // Initial reference current (mA)
+
+    
 
     switch (get_mode()) {
         case IDLE:
@@ -158,14 +124,75 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) timer2_isr(void) {
             //         pwm_duty, OC1RS, LATAbits.LATA0);
             // NU32DIP_WriteUART1(buffer);
             break;
+            
+
+        case ITEST:
+            // 🔹 Ensure reference current follows a strict square wave pattern
+            if (count < 25) {
+                ref_current = 200.0;  // First 25 samples: +200 mA
+            } else if (count < 50) {
+                ref_current = -200.0; // Next 25 samples: -200 mA
+            } else if (count < 75) {
+                ref_current = 200.0;  // Next 25 samples: +200 mA
+            } else if (count < 100) {
+                ref_current = -200.0; // Last 25 samples: -200 mA
+            }
+
+            // ref_current = 200.0;
+
+            // 🔹 Read actual current
+            float actual_current = INA219_read_current();
+
+            // 🔹 Compute Error
+            float error = ref_current - actual_current;
+
+            // 🔹 Accumulate Integral Term
+            static float eint = 0.0;
+            eint += error;
+
+            // 🔹 Compute PI Controller Output
+            float control_signal = Kp_mA * error + Ki_mA * eint;
+
+            // 🔹 Limit PWM Output
+            if (control_signal > 100) control_signal = 100;
+            if (control_signal < -100) control_signal = -100;
+            pwm_duty = (int)control_signal;
+
+            // 🔹 Apply PWM Output
+            // 🔹 Apply PWM Output with Proper Direction Handling
+            if (pwm_duty > 0) {
+                OC1RS = (unsigned int)(pwm_duty / 100.0 * PR3);  // Set PWM duty cycle
+                LATAbits.LATA0 = 0;  // Forward direction
+            } else if (pwm_duty < 0) {
+                OC1RS = (unsigned int)(-pwm_duty / 100.0 * PR3);  // Convert to positive duty cycle
+                LATAbits.LATA0 = 1;  // Reverse direction
+            } else {
+                OC1RS = 0;  // Stop motor if PWM is zero
+            }
+
+
+            // 🔹 Store Data for Plotting
+            refCurrent[count] = ref_current;
+            actCurrent[count] = actual_current;
+
+            count++;  // Increment counter
+
+            // 🔹 Stop ITEST Mode After 100 Samples
+            if (count >= 100) {  
+                set_mode(IDLE);  // Stop ITEST mode
+                count = 0;  // Reset counter
+                eint = 0.0;  // Reset integral term
+            }
+            break;
+
+
 
         default:
             break;
     }
 
-    IFS0bits.T2IF = 0;  // Clear Timer2 interrupt flag
+    IFS0bits.T2IF = 0; // Clear Timer 2 interrupt flag
 }
-
 
 
 int main()
@@ -200,7 +227,7 @@ int main()
     case 'a':  // Read current sensor (ADC counts)
     {
         float adc_counts = readINA219(INA219_REG_CURRENT); //reads raw ADC count
-        sprintf(buffer, "%d\r\n", adc_counts);  // Format ADC count as a string
+        sprintf(buffer, "%f\r\n", adc_counts);  // Format ADC count as a string
         NU32DIP_WriteUART1(buffer);  // Send the ADC count to the client
         break;
     }
@@ -208,8 +235,10 @@ int main()
     case 'b':  // Read current sensor (mA milliamps)
     {
         float current_mA = INA219_read_current(); //reads current in mA
-        sprintf(buffer, "%d\r\n", current_mA);  // Format current count as a string
+        sprintf(buffer, "%f\r\n", current_mA);  // Format current count as a string
         NU32DIP_WriteUART1(buffer);  // Send the current to the client
+
+        
         break;
     }
 
@@ -241,21 +270,17 @@ int main()
 
     // case 'f':  // Set PWM duty cycle (-100 to 100)
     // {
-    //     int n = 0;
+    //     float n = 0.0f;
     //     NU32DIP_ReadUART1(buffer, BUF_SIZE);  // Read the PWM value
     //     sscanf(buffer, "%f", &n);  // Parse the PWM value
         
-    //     // 🔹 Debug: Print received PWM value BEFORE updating
-    //     sprintf(buffer, "Received PWM value: %d\r\n", n);
+    //     // Debug: Print received PWM value BEFORE updating
+    //     sprintf(buffer, "Received PWM value: %.2f\r\n", n);
     //     NU32DIP_WriteUART1(buffer);
         
-    //     if (n >= -100 && n <= 100) {
-    //         pwm_duty = n;  // Set the PWM duty cycle
+    //     if (n >= -100.0f && n <= 100.0f) {
+    //         pwm_duty = (int)n;  // Set the PWM duty cycle (cast to int if needed)
     //         set_mode(PWM);  // Switch to PWM mode
-
-    //         // 🔹 Debug: Print updated `pwm_duty`
-    //         // sprintf(buffer, "PWM updated to: %d\r\n", pwm_duty);
-    //         // NU32DIP_WriteUART1(buffer);
     //     } else {
     //         NU32DIP_WriteUART1("Invalid PWM value\r\n");
     //     }
@@ -264,16 +289,16 @@ int main()
 
     case 'f':  // Set PWM duty cycle (-100 to 100)
     {
-        float n = 0.0f;
-        NU32DIP_ReadUART1(buffer, BUF_SIZE);  // Read the PWM value
-        sscanf(buffer, "%f", &n);  // Parse the PWM value
-        
+        int pwm_value = 0;
+        NU32DIP_ReadUART1(buffer, BUF_SIZE);  // Read PWM value from UART
+        sscanf(buffer, "%d", &pwm_value);  // Parse as integer
+
         // Debug: Print received PWM value BEFORE updating
-        sprintf(buffer, "Received PWM value: %.2f\r\n", n);
+        sprintf(buffer, "Received PWM value: %d\r\n", pwm_value);
         NU32DIP_WriteUART1(buffer);
         
-        if (n >= -100.0f && n <= 100.0f) {
-            pwm_duty = (int)n;  // Set the PWM duty cycle (cast to int if needed)
+        if (pwm_value >= -100 && pwm_value <= 100) {
+            pwm_duty = pwm_value;  // Set PWM duty cycle
             set_mode(PWM);  // Switch to PWM mode
         } else {
             NU32DIP_WriteUART1("Invalid PWM value\r\n");
@@ -281,12 +306,16 @@ int main()
         break;
     }
 
+
     case 'g':  // Set current gains (Kp_mA, Ki_mA)
     {
         NU32DIP_ReadUART1(buffer, BUF_SIZE);  // Read user input
         sscanf(buffer, "%f %f", &Kp_mA, &Ki_mA);  // Parse values
         // sprintf(buffer, "Current Gains Set: Kp_mA = %.2f, Ki_mA = %.2f\r\n", Kp_mA, Ki_mA);
         // NU32DIP_WriteUART1(buffer);
+        // sprintf(buffer, "Updated Gains: Kp = %.4f, Ki = %.4f\r\n", Kp_mA, Ki_mA);
+        // NU32DIP_WriteUART1(buffer);
+
         break;
     }
 
@@ -345,6 +374,25 @@ int main()
         break;
     }
 
+    case 'k':  // Start ITEST Mode
+    {
+        set_mode(ITEST);  // Set PIC32 to ITEST mode
+
+        // Wait for ITEST to complete
+        while (get_mode() == ITEST) {}  // Block until test finishes
+
+        // Send data back to client for plotting
+        char send_buffer[50];
+        sprintf(send_buffer, "%d\n", 100);  // Send data length (100 samples)
+        NU32DIP_WriteUART1(send_buffer);
+
+        for (int i = 0; i < 100; i++) {
+            sprintf(send_buffer, "%.2f %.2f\n", refCurrent[i], actCurrent[i]);
+            NU32DIP_WriteUART1(send_buffer);
+        }
+
+        break;
+    }
 
     case 'q':  // Quit command
     {

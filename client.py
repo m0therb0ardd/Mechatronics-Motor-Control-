@@ -1,3 +1,39 @@
+import matplotlib.pyplot as plt 
+from statistics import mean 
+def read_plot_matrix():
+    n_str = ser.read_until(b'\n');  # get the number of data points to receive
+    n_int = int(n_str) # turn it into an int
+    print('Data length = ' + str(n_int))
+    ref = []
+    data = []
+    data_received = 0
+    while data_received < n_int:
+        dat_str = ser.read_until(b'\n');  # get the data as a string, ints seperated by spaces
+        dat_int = list(map(float,dat_str.split())) # now the data is a list //THIS WAS CHANGED TO FLOAT BY PUSHKAR 
+        ref.append(dat_int[0])
+        data.append(dat_int[1])
+        data_received = data_received + 1
+    meanzip = zip(ref,data)
+    meanlist = []
+    for i,j in meanzip:
+        meanlist.append(abs(i-j))
+    score = mean(meanlist)
+    t = range(len(ref)) # index array
+    plt.plot(t,ref,'r*-',t,data,'b*-')
+    plt.title('Score = ' + str(score))
+    plt.ylabel('value')
+    plt.xlabel('index')
+    plt.show()
+
+# from genref import genRef
+
+import serial
+ser = serial.Serial('/dev/ttyUSB0',230400)
+print('Opening port: ')
+print(ser.name)
+
+has_quit = False
+
 import serial
 ser = serial.Serial('/dev/ttyUSB0',230400)
 print('Opening port: ')
@@ -8,7 +44,7 @@ has_quit = False
 while not has_quit:
     print('PIC32 MOTOR DRIVER INTERFACE')
     # display the menu options; this list will grow
-    print('\tc: Read encoder(counts) \tf: Set PWM \tp: Unpower motor  \te: Reset Encoder \td: Read encoder(deg)  \ta: Read current sensor(ADC counts) \tb:  Read current sensor(mA)  \tg: Set Current Gains \th: Get current gains \tr: Get mode \tq: Quit')  # '\t' is a tab    # read the user's choice
+    print('\tc: Read encoder(counts) \tf: Set PWM \tp: Unpower motor  \te: Reset Encoder \td: Read encoder(deg)  \ta: Read current sensor(ADC counts) \tb:  Read current sensor(mA)  \tg: Set Current Gains \th: Get current gains \tk: Test current control \tr: Get mode \tq: Quit')  # '\t' is a tab    # read the user's choice
 
 
     selection = input('\nENTER COMMAND: ')
@@ -24,8 +60,7 @@ while not has_quit:
             print(f'Encoder counts: {counts}\n')
 
     elif selection == 'a':  # Read current sensor (ADC counts)
-        # ser.write(b'a\n')  # Send the 'a' command
-        adc_str = ser.read_until(b'\n').decode().strip()  # Read the response
+        adc_str = ser.read_until(b'\n') # Read the response
         adc_counts = float(adc_str)  # Convert to float
         print(f'Current (ADC counts): {adc_counts}\n')  # Print the ADC counts
 
@@ -59,13 +94,17 @@ while not has_quit:
         has_quit = True  # Exit client
         ser.close()  # Close the serial port
         
-    elif selection == 'f':  # Set PWM
-        pwm_value = float(input('Enter PWM value (-100 to 100):'))  # Ask for PWM value
-        #ser.write(pwm_value.encode() + b'\n')  # Send the PWM value to the PIC32
-        ser.write(f"{pwm_value}\n".encode())  # Send the PWM value to the PIC32
+    # elif selection == 'f':  # Set PWM
+    #     pwm_value = float(input('Enter PWM value (-100 to 100):'))  # Ask for PWM value
+    #     #ser.write(pwm_value.encode() + b'\n')  # Send the PWM value to the PIC32
+    #     ser.write(f"{pwm_value}\n".encode())  # Send the PWM value to the PIC32
 
-        # response = ser.read_until(b'\n').decode().strip()  # Read the response
-        # print(f'{response}\n')  # Print the confirmation message
+    elif selection == 'f':  # Set PWM
+        pwm_input = input("Enter PWM value (-100 to 100): ")  # Ask user for PWM value
+        pwm_int = int(pwm_input)  # Convert to integer
+        print(f"PWM value set to {pwm_int}\n")  # Print confirmation
+        ser.write((str(pwm_int) + '\n').encode())  # Send the PWM value to the PIC32
+
 
     elif selection == 'g':  # Set current gains
         kp = float(input("Enter Kp for current control: "))
@@ -78,6 +117,10 @@ while not has_quit:
         #ser.write(b"h\n")  # Send command to request current gains
         response = ser.read_until(b'\n').decode().strip()  # Read the response
         print(f"Current Gains: {response}\n")
+
+    elif selection == 'k':  # Test Current Control
+        print("Starting ITEST Mode...")
+        read_plot_matrix()  # Retrieve and plot results NEEEDSSS INTSSSS
 
 
     elif selection == 'p':  # Unpower motor
