@@ -31,6 +31,14 @@ static volatile float Kp_mA = 0.03, Ki_mA = 0.05; // Default current control gai
 static float refCurrent[100];                     // stores desired current values in ITEST mode
 static float actCurrent[100];                     // stores actual current as measured by INA219 sensor
 
+
+// Position control PID gains (default values) for position control 
+static volatile float Kp_pos = 3.0, Ki_pos = 0.001, Kd_pos = 0.0;
+static volatile float desiredAngle = 0.0; // Stores the target motor position in degrees
+static volatile float commandedCurrent = 0.0; // Stores the reference current computed by the position controller
+
+
+
 // pwm_init 1. configures timer3 for 20kHz PWM signal
 // 2. maps rb15 as pwm output
 // enables output compare oc1
@@ -65,7 +73,6 @@ void pwm_init(void)
     __builtin_enable_interrupts(); // re enable interrupts
 }
 
-// bens idea
 void set_pwm(int pwm)
 {
     char send_buffer[50];
@@ -112,6 +119,60 @@ void timer2_init(void)
     __builtin_enable_interrupts(); // Re-enable interrupts
 }
 
+//setting up 200 hz position controller
+void position_controller_init(void) {
+    PR4 = 7500 - 1; // Timer4 period for 200Hz
+    __builtin_disable_interrupts();
+
+    T4CONbits.TCKPS = 0b101;  // Prescaler N=32
+    TMR4 = 0;                 // Reset Timer4 counter
+
+    IPC4bits.T4IP = 6;  // Priority
+    IPC4bits.T4IS = 0;  // Sub-priority
+    IFS0bits.T4IF = 0;  // Clear interrupt flag
+    IEC0bits.T4IE = 1;  // Enable Timer4 interrupt
+
+    T4CONbits.ON = 1; // Start Timer4
+    __builtin_enable_interrupts();
+}
+
+
+void __ISR(_TIMER_4_VECTOR, IPL6SOFT) position_control_isr(void) {
+    static float eprev = 0.0, eint = 0.0;
+    
+    if (get_mode() == HOLD) {
+        // Read encoder
+        WriteUART2("a");
+        while (!get_encoder_flag()) {}  
+        set_encoder_flag(0);
+        
+        // Convert encoder count to degrees
+        int cnt = get_encoder_count();
+        float degreesPerCount = 360.0 / (334.0 * 4.0);
+        float encoderAngle = cnt * degreesPerCount;
+
+        // Debug: Print encoder count and angle
+        // char buffer[100];
+        // sprintf(buffer, "Encoder Count: %d, Encoder Angle: %.2f\r\n", cnt, encoderAngle);
+        // NU32DIP_WriteUART1(buffer);
+
+        // PID Control
+        float e = desiredAngle - encoderAngle;
+        float edot = e - eprev;
+        eint += e;
+        
+        // Compute Reference Current
+        commandedCurrent = (Kp_pos * e) + (Ki_pos * eint) + (Kd_pos * edot);
+        eprev = e;
+    }
+
+    // Toggle pin for oscilloscope debugging // add osc to pin 3 for A1 
+    LATAbits.LATA1 ^= 1;  
+
+    IFS0bits.T4IF = 0;  // Clear interrupt flag
+}
+
+
 void __ISR(_TIMER_2_VECTOR, IPL5SOFT) timer2_isr(void)
 {
     char buffer[100]; // Declare local buffer
@@ -120,6 +181,12 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) timer2_isr(void)
     static int count = 0;             // counter for 100 samples
     static float integral_term = 0.0; // Integral term for PI control
     static float ref_current = 200.0; // Initial reference current (mA)
+
+    static float eprev = 0.0;  // Declare it static so it retains value between interrupts
+
+    static int counter = 0;  // Counter to track ISR iterations
+
+
 
     switch (get_mode())
     {
@@ -150,80 +217,6 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) timer2_isr(void)
         // NU32DIP_WriteUART1(buffer);
         break;
 
-    // case ITEST:
-    //     // 🔹 Ensure reference current follows a strict square wave pattern
-    //     if (count < 25)
-    //     {
-    //         ref_current = 200.0; // First 25 samples: +200 mA
-    //     }
-    //     else if (count < 50)
-    //     {
-    //         ref_current = -200.0; // Next 25 samples: -200 mA
-    //     }
-    //     else if (count < 75)
-    //     {
-    //         ref_current = 200.0; // Next 25 samples: +200 mA
-    //     }
-    //     else if (count < 100)
-    //     {
-    //         ref_current = -200.0; // Last 25 samples: -200 mA
-    //     }
-
-    //     // ref_current = 200.0;
-
-    //     // 🔹 Read actual current
-    //     float actual_current = INA219_read_current();
-
-    //     // 🔹 Compute Error
-    //     float error = ref_current - actual_current;
-
-    //     // 🔹 Accumulate Integral Term
-    //     static float eint = 0.0;
-    //     eint += error;
-
-    //     // 🔹 Compute PI Controller Output
-    //     float control_signal = Kp_mA * error + Ki_mA * eint;
-
-    //     // 🔹 Limit PWM Output
-    //     if (control_signal > 100)
-    //         control_signal = 100;
-    //     if (control_signal < -100)
-    //         control_signal = -100;
-    //     pwm_duty = (int)control_signal;
-
-    //     // 🔹 Apply PWM Output
-    //     // 🔹 Apply PWM Output with Proper Direction Handling
-    //     if (pwm_duty > 0)
-    //     {
-    //         OC1RS = (unsigned int)(pwm_duty / 100.0 * PR3); // Set PWM duty cycle
-    //         //LATAbits.LATA0 = 0;                             // Forward direction
-    //         LATBbits.LATB2 = 0; 
-    //     }
-    //     else if (pwm_duty < 0)
-    //     {
-    //         OC1RS = (unsigned int)(-pwm_duty / 100.0 * PR3); // Convert to positive duty cycle
-    //         //LATAbits.LATA0 = 1;                              // Reverse direction
-    //         LATBbits.LATB2 = 0; 
-    //     }
-    //     else
-    //     {
-    //         OC1RS = 0; // Stop motor if PWM is zero
-    //     }
-
-    //     // 🔹 Store Data for Plotting
-    //     refCurrent[count] = ref_current;
-    //     actCurrent[count] = actual_current;
-
-    //     count++; // Increment counter
-
-    //     // 🔹 Stop ITEST Mode After 100 Samples
-    //     if (count >= 100)
-    //     {
-    //         set_mode(IDLE); // Stop ITEST mode
-    //         count = 0;      // Reset counter
-    //         eint = 0.0;     // Reset integral term
-    //     }
-    //     break;
 
     case ITEST:
         // 🔹 Ensure reference current follows a strict square wave pattern
@@ -277,11 +270,83 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) timer2_isr(void)
         }
         break;
 
-    default:
+    // case HOLD: {
+    //         // Read encoder
+    //         WriteUART2("a");
+    //         while (!get_encoder_flag()) {}
+    //         set_encoder_flag(0);
+
+    //         // Convert encoder count to degrees
+    //         int cnt = get_encoder_count();
+    //         float degreesPerCount = 360.0 / (334.0 * 4.0);
+    //         float encoderAngle = cnt * degreesPerCount;
+
+    //         // PID Control
+    //         float e = desiredAngle - encoderAngle;
+    //         float edot = e - eprev;
+    //         eint += e;
+
+    //         // Compute Reference Current
+    //         commandedCurrent = (Kp_pos * e) + (Ki_pos * eint) + (Kd_pos * edot);
+    //         eprev = e;
+
+    //         // Limit commandedCurrent to ±100 mA
+    //         if (commandedCurrent > 100.0) commandedCurrent = 100.0;
+    //         if (commandedCurrent < -100.0) commandedCurrent = -100.0;
+
+    //         // Apply PWM Output
+    //         if (commandedCurrent > 0) {
+    //             OC1RS = (unsigned int)(commandedCurrent / 100.0 * PR3);
+    //             LATBbits.LATB2 = 0;  // Forward direction
+    //         } else if (commandedCurrent < 0) {
+    //             OC1RS = (unsigned int)(-commandedCurrent / 100.0 * PR3);
+    //             LATBbits.LATB2 = 1;  // Reverse direction
+    //         } else {
+    //             OC1RS = 0;  // Stop motor
+    //         }
+
+    //         // Stop HOLD mode after a long time (to avoid infinite holding)
+    //         counter++;
+    //         if (counter >= 10000) {
+    //             set_mode(IDLE);
+    //             counter = 0;
+    //             eint = 0.0;  // Reset integral term
+    //         }
+    //         break;
+    //     }
+
+    case HOLD:
+    {
+        float actualCurrent = INA219_read_current();
+
+        // Compute Error
+        float e = commandedCurrent - actualCurrent;
+        eint = eint + e;
+
+        // Compute PWM duty cycle
+        float dutyCycle = (Kp_mA * e) + (Ki_mA * eint);
+
+        // Limit duty cycle
+        if (dutyCycle > 100.0) dutyCycle = 100.0;
+        if (dutyCycle <= -100.0) dutyCycle = -100.0;
+
+        // Apply PWM
+        OC1RS = (unsigned int)(abs(dutyCycle) / 100.0 * PR3);
+        LATBbits.LATB2 = (dutyCycle >= 0) ? 0 : 1;
+
+        // Debug print: Check if the current changes
+        char buf[100];
+        sprintf(buf, "HOLD MODE: e=%.2f, PWM=%.2f\r\n", e, dutyCycle);
+        NU32DIP_WriteUART1(buf);
         break;
     }
 
-    IFS0bits.T2IF = 0; // Clear Timer 2 interrupt flag
+
+        default:
+            break;
+    }
+
+    IFS0bits.T2IF = 0;  // Clear Timer 2 interrupt flag
 }
 
 int main()
@@ -293,16 +358,25 @@ int main()
     UART2_Startup();    // told to call UAR2_Startup
     timer2_init();      // Initialize Timer2 for 5 kHz ISR
     pwm_init();         // Initialize PWM for 20 kHz signal
+    position_controller_init();  
+
     NU32DIP_YELLOW = 1; // turn off the LEDs
     NU32DIP_GREEN = 1;
     __builtin_disable_interrupts();
     // in future, initialize modules or peripherals here
+
+    TRISAbits.TRISA1 = 0;      // Set A1 PIN 3 TO OUTPUT
+
 
     __builtin_enable_interrupts();
 
     sprintf(buffer, "Timer3 ON: %d, PR3: %d, TMR3: %d, OC1RS: %d\r\n",
             T3CONbits.ON, PR3, TMR3, OC1RS);
     NU32DIP_WriteUART1(buffer);
+
+    sprintf(buffer, "Timer4 ON: %d, PR4: %d, TMR4: %d\r\n", T4CONbits.ON, PR4, TMR4);
+    NU32DIP_WriteUART1(buffer);
+
 
     while (1)
     {
@@ -466,6 +540,20 @@ int main()
             break;
         }
 
+        case 'i':  // Set position gains
+        {
+            NU32DIP_ReadUART1(buffer, BUF_SIZE);
+            sscanf(buffer, "%f %f %f", &Kp_pos, &Ki_pos, &Kd_pos);
+            break;
+        }
+
+        case 'j':  // Get position gains
+        {
+            sprintf(buffer, "Kp: %.2f, Ki: %.2f, Kd: %.2f\r\n", Kp_pos, Ki_pos, Kd_pos);
+            NU32DIP_WriteUART1(buffer);
+            break;
+        }
+
         case 'k': // Start ITEST Mode
         {
             set_mode(ITEST); // Set PIC32 to ITEST mode
@@ -488,6 +576,35 @@ int main()
 
             break;
         }
+
+        // case 'l':  // Go to angle (deg)
+        // {
+        //     NU32DIP_ReadUART1(buffer, BUF_SIZE);
+        //     sscanf(buffer, "%f", &desiredAngle); // Read target angle
+        //     set_mode(HOLD); // Switch to HOLD mode
+        //     break;
+        // }
+
+        case 'l':  // Go to Angle (deg)
+        {
+            char buffer[BUF_SIZE];
+            float new_angle;
+            
+            NU32DIP_ReadUART1(buffer, BUF_SIZE);  // Read the angle input
+            sscanf(buffer, "%f", &new_angle);  // Parse the angle
+
+            desiredAngle = new_angle;  // Store the new desired angle
+            set_mode(HOLD);  // Switch to HOLD mode for position control
+
+            sprintf(buffer, "Moving to angle: %.2f degrees\r\n", desiredAngle);
+            NU32DIP_WriteUART1(buffer);  // Send confirmation to client
+            break;
+        }
+
+
+
+
+
 
         case 'q': // Quit command
         {

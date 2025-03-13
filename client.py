@@ -44,7 +44,7 @@ has_quit = False
 while not has_quit:
     print('PIC32 MOTOR DRIVER INTERFACE')
     # display the menu options; this list will grow
-    print('\tc: Read encoder(counts) \tf: Set PWM \tp: Unpower motor  \te: Reset Encoder \td: Read encoder(deg)  \ta: Read current sensor(ADC counts) \tb:  Read current sensor(mA)  \tg: Set Current Gains \th: Get current gains \tk: Test current control \tr: Get mode \tq: Quit')  # '\t' is a tab    # read the user's choice
+    print('\tc: Read encoder(counts) \tf: Set PWM \tp: Unpower motor  \te: Reset Encoder \td: Read encoder(deg)  \ta: Read current sensor(ADC counts) \tb:  Read current sensor(mA)  \tg: Set Current Gains \th: Get current gains \tk: Test current control \tr: Get mode \ti: Set pos gains  \tj: get pos gains  \tq: Quit')  # '\t' is a tab    # read the user's choice
 
 
     selection = input('\nENTER COMMAND: ')
@@ -85,6 +85,12 @@ while not has_quit:
         # ser.write(b'r\n')  # Send the 'r' command
         mode_str = ser.read_until(b'\n').decode().strip()  # Read the response
         print(f'Current mode: {mode_str}\n')  # Print the mode
+
+    elif selection == 'l':  # Go to Angle (deg)
+        angle = input('Enter desired angle (degrees): ')  # Prompt user for angle
+        ser.write(f"{angle}\n".encode())  # Send the angle as a string to the PIC32
+        print(f"Angle command sent: {angle} degrees\n")  # Confirmation message
+
         
     elif (selection == 'q'):
         # ser.write(b'q\n')  # Send the 'q' command
@@ -117,6 +123,25 @@ while not has_quit:
         #ser.write(b"h\n")  # Send command to request current gains
         response = ser.read_until(b'\n').decode().strip()  # Read the response
         print(f"Current Gains: {response}\n")
+
+
+
+    elif selection == 'i':  # Set position gains
+            kp = float(input("Enter Kp for position control: "))
+            ki = float(input("Enter Ki for position control: ")) 
+            kd = float(input("Enter Ki for position control: ")) 
+            ser.write(f"{kp} {ki} {kd}\n".encode())  # Send command with values 
+            # response = ser.read_until(b'\n').decode().strip()  # Read confirmation
+            # print(f"Response: {response}\n")
+
+    elif selection == 'j':  # Get position gains
+        response = ser.read_until(b'\n').decode().strip()  # Read the response
+        print(f"Position Gains: {response}\n")
+
+
+
+
+
 
     elif selection == 'k':  # Test Current Control
         print("Starting ITEST Mode...")
