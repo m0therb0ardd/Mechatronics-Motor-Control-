@@ -14,7 +14,7 @@ OperatingMode get_mode(void) {
 }
 
 
-//PUSHKAR
+// // PUSHKAR
 // #include "utilities.h"
 
 // volatile enum mode_t mode;

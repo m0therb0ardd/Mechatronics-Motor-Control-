@@ -1,9 +1,9 @@
 #ifndef UTILITIES_H
-#define UTILITES_H
+#define UTILITIES_H
 
 //define operating modes
 typedef enum {
-// enum mode_t {
+
     IDLE, 
     PWM, 
     ITEST,
@@ -20,7 +20,7 @@ OperatingMode get_mode(void);
 #endif
 
 
-//PUSHKAR
+// //PUSHKAR
 // #ifndef UTILITIES__H__
 // #define UTILITIES__H__
 
