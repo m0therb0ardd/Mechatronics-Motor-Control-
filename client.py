@@ -36,14 +36,6 @@ print(ser.name)
 
 has_quit = False
 
-import serial
-ser = serial.Serial('/dev/ttyUSB0',230400)
-print('Opening port: ')
-print(ser.name)
-
-has_quit = False
-
-
 # menu loop
 while not has_quit:
     print('PIC32 MOTOR DRIVER INTERFACE')

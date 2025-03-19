@@ -86,8 +86,8 @@ void pwm_init(void)
 //feedforward
 float compute_feedforward_current(float desired_acceleration) {
     // Estimate feedforward current using a simple model
-    float motor_inertia = 0.1;  // used motor valyes from trial and error
-    float torque_constant = 0.01;  // used motor valyes from trial and error
+    float motor_inertia = 0.1;  // used motor valyes from trial and error --> need to figure these out 
+    float torque_constant = 0.01;  // used motor valyes from trial and error --> need to figure these out
 
     // Torque required: τ = I * α (Newton's Second Law for rotation)
     float required_torque = motor_inertia * desired_acceleration;
