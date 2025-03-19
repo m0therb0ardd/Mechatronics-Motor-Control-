@@ -75,11 +75,25 @@ def genRef(method):
             velend = vel_list[i+1]
             a0 = posstart # calculate coeffs of traj pos = a0+a1*t+a2*t^2+a3*t^3
             a1 = velstart
-            a2 = (3*posend - 3*posstart - 2*velstart*deltaT - velend*deltaT)/(deltaT*deltaT)
-            a3 = (2*posstart + (velstart+velend)*deltaT - 2*posend)/(deltaT*deltaT*deltaT)
+            a2 = (3*posend - 3*posstart - 2*velstart*deltaT - velend*deltaT)/(deltaT*deltaT) 
+            a3 = (2*posstart + (velstart+velend)*deltaT - 2*posend)/(deltaT*deltaT*deltaT) 
+            
+            print(f"Cubic Coefficients: a3={a3}, a2={a2}, a1={a1}")
+
+            
             while (refCtr)*dt < time_list[i+1]:
-                tseg = (refCtr)*dt -time_list[i]
+                tseg = (refCtr)*dt - time_list[i]
+                
+                # Compute position
                 ref.append(a0 + a1*tseg + a2*tseg*tseg + a3*tseg*tseg*tseg)
+                
+                # Compute acceleration (6a3 * t + 2a2)
+                accel_ref.append(6*a3*tseg + 2*a2)
+
                 refCtr = refCtr + 1
 
+
     return ref, accel_ref, a3, a2, a1
+
+
+#plot accel_ref

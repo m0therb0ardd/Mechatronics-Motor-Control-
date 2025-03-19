@@ -34,8 +34,8 @@ static float actCurrent[100];                     // stores actual current as me
 
 
 // Position control PID gains (default values) for position control 
-static volatile float Kp_pos = 0.0, Ki_pos = 0.0, Kd_pos = 0.0;
-//static volatile float Kp_pos = 8.0, Ki_pos = 0.01, Kd_pos = 1750.0;
+//static volatile float Kp_pos = 0.0, Ki_pos = 0.0, Kd_pos = 0.0;
+static volatile float Kp_pos = 8.0, Ki_pos = 0.01, Kd_pos = 1750.0;
 
 static volatile float desiredAngle = 0.0; // Stores the target motor position in degrees
 static volatile float commandedCurrent = 0.0; // Stores the reference current computed by the position controller
@@ -83,19 +83,11 @@ void pwm_init(void)
     __builtin_enable_interrupts(); // re enable interrupts
 }
 
-//feedforward
+//feedforward Nicks way
 float compute_feedforward_current(float desired_acceleration) {
-    // Estimate feedforward current using a simple model
-    float motor_inertia = 0.1;  // used motor valyes from trial and error --> need to figure these out 
-    float torque_constant = 0.01;  // used motor valyes from trial and error --> need to figure these out
-
-    // Torque required: τ = I * α (Newton's Second Law for rotation)
-    float required_torque = motor_inertia * desired_acceleration;
-
-    // Convert torque to current: I = τ / k_t
-    float required_current = required_torque / torque_constant;
-
-    return required_current;
+    float ff_gain = 5.0; //tuning this 
+    float ff_current = ff_gain * desired_acceleration;
+    return ff_current; //hundreds of mA play around with this too
 }
 
 // timer2_init configures timer2 for a 5khz interrupt
@@ -142,6 +134,74 @@ void position_controller_init(void) {
     __builtin_enable_interrupts();
 }
 
+// void __ISR(_TIMER_4_VECTOR, IPL6SOFT) position_control_isr(void) {
+//     static float eprev = 0.0, eint = 0.0;
+//     static int index = 0;
+
+//     OperatingMode mode = get_mode();
+
+//     if (mode == HOLD) {
+//         WriteUART2("a");
+//         while (!get_encoder_flag()) {}  
+//         set_encoder_flag(0);
+
+//         int cnt = get_encoder_count();
+//         float degreesPerCount = 360.0 / (334.0 * 4.0);
+//         float encoderAngle = cnt * degreesPerCount;
+
+//         // Compute PID error
+//         float e = desiredAngle - encoderAngle;
+//         float edot = e - eprev;
+//         eint += e;
+
+//         // Compute reference current
+//         commandedCurrent = (Kp_pos * e) + (Ki_pos * eint) + (Kd_pos * edot);
+//         eprev = e;
+//     }
+//     if (mode == TRACK) {
+//     WriteUART2("a");
+//     while (!get_encoder_flag()) {}  
+//     set_encoder_flag(0);
+
+//     int cnt = get_encoder_count();
+//     float degreesPerCount = 360.0 / (334.0 * 4.0);
+//     float encoderAngle = cnt * degreesPerCount;
+
+
+//     // Fetch desired trajectory values
+//     float desAngle = refTraj[index];
+//     float desAccel = refAccel[index];  // Get acceleration from trajectory
+
+//     // Compute PID error
+//     float e = desAngle - encoderAngle;
+//     float edot = e - eprev;
+//     eint += e;
+
+//     // Compute feedforward current
+//     float feedforward_current = compute_feedforward_current(desAccel); //trying to see if its strong enough
+
+//     char buffer1[100];
+//     sprintf(buffer1, "Feedforward Current: %.2f mA\r\n", feedforward_current);
+//     NU32DIP_WriteUART1(buffer1);
+
+//     // Compute total current command (Feedforward + PID)
+//     commandedCurrent = feedforward_current + (Kp_pos * e) + (Ki_pos * eint) + (Kd_pos * edot);
+//     eprev = e;
+
+//     //store recorded motor position     
+//     motorAngle[index] = encoderAngle;
+//     index++;
+
+//     if (index >= trajectorySize) {
+//         desiredAngle = refTraj[trajectorySize - 1];
+//         set_mode(HOLD);
+//         eint = 0;  
+//         index = 0; 
+//     }
+// }
+//     IFS0bits.T4IF = 0;  // Clear interrupt flag
+// }
+
 void __ISR(_TIMER_4_VECTOR, IPL6SOFT) position_control_isr(void) {
     static float eprev = 0.0, eint = 0.0;
     static int index = 0;
@@ -166,47 +226,74 @@ void __ISR(_TIMER_4_VECTOR, IPL6SOFT) position_control_isr(void) {
         commandedCurrent = (Kp_pos * e) + (Ki_pos * eint) + (Kd_pos * edot);
         eprev = e;
     }
+    
     if (mode == TRACK) {
-    WriteUART2("a");
-    while (!get_encoder_flag()) {}  
-    set_encoder_flag(0);
+        WriteUART2("a");
+        while (!get_encoder_flag()) {}  
+        set_encoder_flag(0);
 
-    int cnt = get_encoder_count();
-    float degreesPerCount = 360.0 / (334.0 * 4.0);
-    float encoderAngle = cnt * degreesPerCount;
+        int cnt = get_encoder_count();
+        float degreesPerCount = 360.0 / (334.0 * 4.0);
+        float encoderAngle = cnt * degreesPerCount;
 
+        // Fetch desired trajectory values
+        float desAngle = refTraj[index];
+        float desAccel = refAccel[index];  // Get acceleration from trajectory
 
-    // Fetch desired trajectory values
-    float desAngle = refTraj[index];
-    float desAccel = refAccel[index];  // Get acceleration from trajectory
+        // Print to verify the received acceleration
+        // char debug_msg[100];
+        // sprintf(debug_msg, "Using Accel: %.2f\r\n", desAccel);
+        // NU32DIP_WriteUART1(debug_msg);
 
-    // Compute PID error
-    float e = desAngle - encoderAngle;
-    float edot = e - eprev;
-    eint += e;
+        // Debugging: Print acceleration
+        // char buffer2[100];
+        // sprintf(buffer2, "Desired Acceleration: %.2f\r\n", desAccel);
+        // NU32DIP_WriteUART1(buffer2);
 
-    // Compute feedforward current
-    float feedforward_current = 5 * compute_feedforward_current(desAccel); //tryign to see if its strong enough
+        // Compute PID error
+        float e = desAngle - encoderAngle;
+        float edot = e - eprev;
+        eint += e;
 
-    char buffer1[100];
-    sprintf(buffer1, "Feedforward Current: %.2f mA\r\n", feedforward_current);
-    NU32DIP_WriteUART1(buffer1);
+        // Compute feedforward current
+        float feedforward_current = compute_feedforward_current(desAccel); // Tune ff_gain inside function
 
-    // Compute total current command (Feedforward + PID)
-    commandedCurrent = feedforward_current + (Kp_pos * e) + (Ki_pos * eint) + (Kd_pos * edot);
-    eprev = e;
+        // Debugging: Print feedforward current
+        // char buffer1[100];
+        // sprintf(buffer1, "Feedforward Current: %.2f mA\r\n", feedforward_current);
+        // NU32DIP_WriteUART1(buffer1);
 
-    //store recorded motor position     
-    motorAngle[index] = encoderAngle;
-    index++;
+        // Compute total current command (Feedforward + PID)
+        commandedCurrent = feedforward_current + (Kp_pos * e) + (Ki_pos * eint) + (Kd_pos * edot);
 
-    if (index >= trajectorySize) {
-        desiredAngle = refTraj[trajectorySize - 1];
-        set_mode(HOLD);
-        eint = 0;  
-        index = 0; 
+        // Debugging: Print total commanded current
+        // char buffer3[100];
+        // sprintf(buffer3, "Total Commanded Current: %.2f mA\r\n", commandedCurrent);
+        // NU32DIP_WriteUART1(buffer3);
+
+        // Clamp commandedCurrent
+        if (commandedCurrent > 500) commandedCurrent = 500;
+        if (commandedCurrent < -500) commandedCurrent = -500;
+
+        // Debugging: Print final commanded current
+        // char buffer4[100];
+        // sprintf(buffer4, "Commanded Current: %.2f mA\r\n", commandedCurrent);
+        // NU32DIP_WriteUART1(buffer4);
+
+        eprev = e;
+
+        // Store recorded motor position     
+        motorAngle[index] = encoderAngle;
+        index++;
+
+        if (index >= trajectorySize) {
+            desiredAngle = refTraj[trajectorySize - 1];
+            set_mode(HOLD);
+            eint = 0;  
+            index = 0; 
+        }
     }
-}
+
     IFS0bits.T4IF = 0;  // Clear interrupt flag
 }
 
@@ -560,6 +647,31 @@ int main()
         }
 
     case 'm': // Load step trajectory
+//     case 'n': // Load cubic trajectory
+// {
+//     NU32DIP_ReadUART1(buffer, BUF_SIZE);
+//     sscanf(buffer, "%d", &trajectorySize);  // Read trajectory size
+
+//     if (trajectorySize > MAX_TRAJECTORY_SIZE) {
+//         NU32DIP_WriteUART1("Error: Trajectory too long\n");
+//         break;
+//     }
+
+//     for (int index = 0; index < trajectorySize; index++) {
+//         NU32DIP_ReadUART1(buffer, BUF_SIZE);
+//         sscanf(buffer, "%f %f", &refTraj[index], &refAccel[index]);  
+
+//         // Debug: Print each received acceleration value
+//     //     char debug_msg[100];
+//     //     sprintf(debug_msg, "Stored Accel[%d]: %.2f\r\n", index, refAccel[index]);
+//     //     NU32DIP_WriteUART1(debug_msg);
+//      }
+
+
+//     NU32DIP_WriteUART1("Trajectory loaded\n");
+//     break;
+// }
+
     case 'n': // Load cubic trajectory
     {
         NU32DIP_ReadUART1(buffer, BUF_SIZE);
@@ -572,7 +684,7 @@ int main()
 
         for (int index = 0; index < trajectorySize; index++) {
             NU32DIP_ReadUART1(buffer, BUF_SIZE);
-            sscanf(buffer, "%f", &refTraj[index]);  // Store trajectory points
+            sscanf(buffer, "%f %f", &refTraj[index], &refAccel[index]);  // Store trajectory points
         }
 
         // Confirm trajectory loaded

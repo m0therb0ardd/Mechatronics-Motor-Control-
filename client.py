@@ -174,26 +174,21 @@ while not has_quit:
         ref, accel_ref, a3, a2, a1 = genRef('cubic')  
         size = len(ref)
         print(size)
-        t = range(len(ref))
-        plt.plot(t, ref, 'r*-')
+        t = range(len(accel_ref)) # plotting accerlation
+        plt.plot(t, accel_ref, 'r*-') #plotting accel
         plt.ylabel('value')
         plt.xlabel('index')
         plt.show()
         ser.write(f"{size}\n".encode())
 
-        # Compute acceleration from cubic polynomial
-        ref_vel = [3*a3*t**2 + 2*a2*t + a1 for t in range(size)]
-        ref_accel = [6*a3*t + 2*a2 for t in range(size)]
 
         for i in range(size):
-            ser.write(f"{ref[i]} {ref_accel[i]}\n".encode())  # Send position & acceleration
-
+            ser.write(f"{ref[i]} {accel_ref[i]}\n".encode())  # Send position & acceleration
+            print(f"Sending: Position={ref[i]}, Acceleration={accel_ref[i]}")  # Debug print
 
  
     elif (selection == 'o'):
-        print(f"Executing Trajectory!\n")
-        # ser.write(b"o\n")  # Tell PIC32 to execute trajectory
-        
+        print(f"Executing Trajectory!\n")        
 
         # Wait for the trajectory size
         while True:
@@ -204,6 +199,7 @@ while not has_quit:
             print(f"Skipping unexpected message: {n_str}")  # Debug print for unexpected messages
 
         ref = []
+        accel_ref = []
         data = []
         for _ in range(n_int):
             dat_str = ser.read_until(b'\n').decode().strip()
@@ -216,6 +212,27 @@ while not has_quit:
                     print(f"Skipping invalid data: {dat_str}")  # Skip invalid data
             except ValueError:
                 print(f"Skipping invalid data: {dat_str}")  # Skip invalid data
+
+        # for _ in range(n_int):
+        #     dat_str = ser.read_until(b'\n').decode().strip()
+        #     try:
+        #         dat_int = list(map(float, dat_str.split()))
+        #         if len(dat_int) == 2:  # Ensure there are exactly 2 values (position and acceleration)
+        #             ref.append(dat_int[0])  # Store position
+        #             accel_ref.append(dat_int[1])  # Store acceleration
+        #         else:
+        #             print(f"Skipping invalid data: {dat_str}")  # Skip invalid data
+        #     except ValueError:
+        #         print(f"Skipping invalid data: {dat_str}")  # Skip invalid data
+
+        # plt.plot(range(len(ref)), accel_ref, 'r*-', label="Acceleration Reference")
+        # plt.xlabel("Time Step")
+        # plt.ylabel("Acceleration (deg/s^2)")
+        # plt.title("Feedforward Acceleration")
+        # plt.legend()
+        # plt.show()
+
+
 
         plt.plot(range(len(ref)), ref, 'r*-', label="Reference")
         plt.plot(range(len(data)), data, 'b*-', label="Actual")
