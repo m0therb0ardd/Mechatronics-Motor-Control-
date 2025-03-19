@@ -48,7 +48,7 @@ has_quit = False
 while not has_quit:
     print('PIC32 MOTOR DRIVER INTERFACE')
     # display the menu options; this list will grow
-    print(' \tm: Load step trajectory  \tn: Load cubic trajectory  \to: Execute trajectory \tc: Read encoder(counts) \tf: Set PWM \tp: Unpower motor  \te: Reset Encoder \td: Read encoder(deg)  \ta: Read current sensor(ADC counts) \tb:  Read current sensor(mA)  \tg: Set Current Gains \th: Get current gains \tk: Test current control \tr: Get mode \ti: Set pos gains  \tj: get pos gains  \tq: Quit')  # '\t' is a tab    # read the user's choice
+    print(' \tm: Load step trajectory  \tn: Load cubic trajectory (FEED FORWARD)  \to: Execute trajectory \tc: Read encoder(counts) \tf: Set PWM \tp: Unpower motor  \te: Reset Encoder \td: Read encoder(deg)  \ta: Read current sensor(ADC counts) \tb:  Read current sensor(mA)  \tg: Set Current Gains \th: Get current gains \tk: Test current control \tr: Get mode \ti: Set pos gains  \tj: get pos gains  \tq: Quit')  # '\t' is a tab    # read the user's choice
 
 
     selection = input('\nENTER COMMAND: ')
@@ -152,7 +152,7 @@ while not has_quit:
         print(f'{response}\n')  # Print the confirmation message
 
     elif (selection == 'm'):
-            ref = genRef('step')
+            ref, accel_ref, a3, a2, a1 = genRef('step')
             size = len(ref)
             print(size)
             t = range(len(ref))
@@ -164,24 +164,44 @@ while not has_quit:
             for val in ref:
                 ser.write(f"{val}\n".encode())
 
+
+    # elif (selection == 'n'):
+    #         ref, accel_ref, a3, a2, a1 = genRef('cubic')
+    #         size = len(ref)
+    #         print(size)
+    #         t = range(len(ref))
+    #         plt.plot(t, ref, 'r*-')
+    #         plt.ylabel('value')
+    #         plt.xlabel('index')
+    #         plt.show()
+    #         ser.write(f"{size}\n".encode())
+    #         for val in ref:
+    #             ser.write(f"{val}\n".encode())
 
     elif (selection == 'n'):
-            ref = genRef('cubic')
-            size = len(ref)
-            print(size)
-            t = range(len(ref))
-            plt.plot(t, ref, 'r*-')
-            plt.ylabel('value')
-            plt.xlabel('index')
-            plt.show()
-            ser.write(f"{size}\n".encode())
-            for val in ref:
-                ser.write(f"{val}\n".encode())
+        ref, accel_ref, a3, a2, a1 = genRef('cubic')  
+        size = len(ref)
+        print(size)
+        t = range(len(ref))
+        plt.plot(t, ref, 'r*-')
+        plt.ylabel('value')
+        plt.xlabel('index')
+        plt.show()
+        ser.write(f"{size}\n".encode())
+
+        # Compute acceleration from cubic polynomial
+        ref_vel = [3*a3*t**2 + 2*a2*t + a1 for t in range(size)]
+        ref_accel = [6*a3*t + 2*a2 for t in range(size)]
+
+        for i in range(size):
+            ser.write(f"{ref[i]} {ref_accel[i]}\n".encode())  # Send position & acceleration
+
 
  
     elif (selection == 'o'):
         print(f"Executing Trajectory!\n")
-        ser.write(b"o\n")  # Tell PIC32 to execute trajectory
+        # ser.write(b"o\n")  # Tell PIC32 to execute trajectory
+        
 
         # Wait for the trajectory size
         while True:

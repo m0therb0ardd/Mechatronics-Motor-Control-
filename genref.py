@@ -45,9 +45,14 @@ def genRef(method):
                 ref[samp] = angle_list[i-1]
             last_sample = sample_list[i]
         ref[samp] = angle_list[-1]
+
+        #filling in for ff
+        accel_ref = [0] * len(ref)
+        a3, a2, a1 = 0, 0, 0
     
     if method == 'cubic':
         ref = [] # store the output trajectory
+        accel_ref = []
         time_list = [] # time
         pos_list = [] # position
         for i in range(0, len(reflist), 2):
@@ -77,4 +82,4 @@ def genRef(method):
                 ref.append(a0 + a1*tseg + a2*tseg*tseg + a3*tseg*tseg*tseg)
                 refCtr = refCtr + 1
 
-    return ref
+    return ref, accel_ref, a3, a2, a1

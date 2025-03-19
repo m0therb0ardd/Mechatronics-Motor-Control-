@@ -28,13 +28,14 @@ volatile int motor_direction = 0; // Motor direction (0 = brake, 1 = forward, -1
 
 // SECTION 28.4.10: PI CURRENT CONTROL AND ITEST
 static volatile float Kp_mA = 0.03, Ki_mA = 0.05; // Default current control gains --> needs to be accessible in timer2 for ISR control
+//static volatile float Kp_mA = 0.0, Ki_mA = 0.0;
 static float refCurrent[100];                     // stores desired current values in ITEST mode
 static float actCurrent[100];                     // stores actual current as measured by INA219 sensor
 
 
 // Position control PID gains (default values) for position control 
-static volatile float Kp_pos = 8.0, Ki_pos = 0.01, Kd_pos = 1750.0;
-//static volatile float Kp_pos = 3.0, Ki_pos = 0.001, Kd_pos = 0.0;
+static volatile float Kp_pos = 0.0, Ki_pos = 0.0, Kd_pos = 0.0;
+//static volatile float Kp_pos = 8.0, Ki_pos = 0.01, Kd_pos = 1750.0;
 
 static volatile float desiredAngle = 0.0; // Stores the target motor position in degrees
 static volatile float commandedCurrent = 0.0; // Stores the reference current computed by the position controller
@@ -42,6 +43,7 @@ static volatile float commandedCurrent = 0.0; // Stores the reference current co
 //trajectory tracking variables
 #define MAX_TRAJECTORY_SIZE 1000
 static volatile float refTraj[MAX_TRAJECTORY_SIZE]; // Reference trajectory
+static volatile float refAccel[MAX_TRAJECTORY_SIZE];  //acceleration for ff
 static volatile float motorAngle[MAX_TRAJECTORY_SIZE]; // Actual recorded motor angles
 static volatile int trajectorySize = 0; // Number of trajectory points
 static volatile int trajIndex = 0; // Current trajectory index
@@ -81,11 +83,11 @@ void pwm_init(void)
     __builtin_enable_interrupts(); // re enable interrupts
 }
 
-
+//feedforward
 float compute_feedforward_current(float desired_acceleration) {
     // Estimate feedforward current using a simple model
-    float motor_inertia = 0.001;  // Example motor inertia (adjust this)
-    float torque_constant = 0.1;  // Nm/A (motor-specific value)
+    float motor_inertia = 0.1;  // used motor valyes from trial and error
+    float torque_constant = 0.01;  // used motor valyes from trial and error
 
     // Torque required: τ = I * α (Newton's Second Law for rotation)
     float required_torque = motor_inertia * desired_acceleration;
@@ -173,15 +175,28 @@ void __ISR(_TIMER_4_VECTOR, IPL6SOFT) position_control_isr(void) {
     float degreesPerCount = 360.0 / (334.0 * 4.0);
     float encoderAngle = cnt * degreesPerCount;
 
-    // Fetch trajectory point
+
+    // Fetch desired trajectory values
     float desAngle = refTraj[index];
+    float desAccel = refAccel[index];  // Get acceleration from trajectory
+
+    // Compute PID error
     float e = desAngle - encoderAngle;
     float edot = e - eprev;
     eint += e;
-    
-    commandedCurrent = (Kp_pos * e) + (Ki_pos * eint) + (Kd_pos * edot);
+
+    // Compute feedforward current
+    float feedforward_current = 5 * compute_feedforward_current(desAccel); //tryign to see if its strong enough
+
+    char buffer1[100];
+    sprintf(buffer1, "Feedforward Current: %.2f mA\r\n", feedforward_current);
+    NU32DIP_WriteUART1(buffer1);
+
+    // Compute total current command (Feedforward + PID)
+    commandedCurrent = feedforward_current + (Kp_pos * e) + (Ki_pos * eint) + (Kd_pos * edot);
     eprev = e;
-    
+
+    //store recorded motor position     
     motorAngle[index] = encoderAngle;
     index++;
 
